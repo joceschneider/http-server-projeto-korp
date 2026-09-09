@@ -1,0 +1,44 @@
+# macOS
+.DS_Store
+
+# VS Code / IDE
+.vscode/
+.idea/
+
+# Logs
+*.log
+
+# Backups
+*.bak
+*.backup
+*~
+
+# Environment / secrets
+.env
+.env.*
+*.pem
+*.key
+*.p12
+*.pfx
+
+# SSH keys
+id_rsa
+id_rsa.pub
+id_ed25519
+id_ed25519.pub
+id_ed25519_*
+id_ed25519_*.pub
+
+# Ansible local inventory
+ansible/inventory.ini
+*.retry
+
+# Python / Ansible cache
+__pycache__/
+*.pyc
+.venv/
+
+# Go binaries
+http-server-projeto-korp
+bin/
+dist/

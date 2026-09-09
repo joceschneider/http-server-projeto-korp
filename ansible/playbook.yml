@@ -1,0 +1,213 @@
+---
+- name: Provisionar ambiente Projeto Korp
+  hosts: korp
+  become: true
+
+  vars:
+    projeto_destino: /opt/http-server-projeto-korp
+    docker_network: projeto-korp-network
+
+    docker_arch_map:
+      x86_64: amd64
+      aarch64: arm64
+
+    arquivos_projeto:
+      - main.go
+      - go.mod
+      - go.sum
+      - Dockerfile
+      - .dockerignore
+      - docker-compose.yml
+
+    diretorios_projeto:
+      - nginx
+      - prometheus
+      - grafana
+
+  tasks:
+    # ============================================================
+    # INFORMAÇÕES DO HOST
+    # ============================================================
+
+    - name: Exibir informações do host
+      ansible.builtin.debug:
+        msg:
+          - "Host: {{ inventory_hostname }}"
+          - "Sistema: {{ ansible_facts['distribution'] }} {{ ansible_facts['distribution_version'] }}"
+          - "Arquitetura: {{ ansible_facts['architecture'] }}"
+
+    - name: Validar sistema operacional suportado
+      ansible.builtin.assert:
+        that:
+          - ansible_facts['distribution'] == 'Ubuntu'
+          - ansible_facts['architecture'] in docker_arch_map
+        fail_msg: "Este playbook foi preparado para Ubuntu amd64/arm64."
+        success_msg: "Sistema operacional compatível."
+
+    # ============================================================
+    # DOCKER
+    # ============================================================
+
+    - name: Instalar pré-requisitos do Docker
+      ansible.builtin.apt:
+        name:
+          - ca-certificates
+          - curl
+          - python3-debian
+        state: present
+        update_cache: true
+
+    - name: Configurar repositório oficial do Docker
+      ansible.builtin.deb822_repository:
+        name: docker
+        types:
+          - deb
+        uris:
+          - https://download.docker.com/linux/ubuntu
+        suites:
+          - "{{ ansible_facts['distribution_release'] }}"
+        components:
+          - stable
+        architectures:
+          - "{{ docker_arch_map[ansible_facts['architecture']] }}"
+        signed_by: https://download.docker.com/linux/ubuntu/gpg
+        state: present
+
+    - name: Atualizar cache APT
+      ansible.builtin.apt:
+        update_cache: true
+
+    - name: Instalar Docker Engine e Docker Compose
+      ansible.builtin.apt:
+        name:
+          - docker-ce
+          - docker-ce-cli
+          - containerd.io
+          - docker-buildx-plugin
+          - docker-compose-plugin
+        state: present
+
+    - name: Garantir que Docker esteja ativo
+      ansible.builtin.service:
+        name: docker
+        state: started
+        enabled: true
+
+    - name: Adicionar usuário ao grupo docker
+      ansible.builtin.user:
+        name: "{{ ansible_user }}"
+        groups:
+          - docker
+        append: true
+
+    # ============================================================
+    # EVITAR CONFLITO COM NGINX DO HOST
+    # ============================================================
+
+    - name: Coletar informações dos serviços
+      ansible.builtin.service_facts:
+
+    - name: Desabilitar NGINX instalado diretamente no Ubuntu
+      ansible.builtin.service:
+        name: nginx
+        state: stopped
+        enabled: false
+      when: "'nginx.service' in ansible_facts.services"
+
+    # ============================================================
+    # PROJETO
+    # ============================================================
+
+    - name: Criar diretório do projeto
+      ansible.builtin.file:
+        path: "{{ projeto_destino }}"
+        state: directory
+        owner: "{{ ansible_user }}"
+        group: "{{ ansible_user }}"
+        mode: "0755"
+
+    - name: Copiar arquivos principais do projeto
+      ansible.builtin.copy:
+        src: "{{ playbook_dir }}/../{{ item }}"
+        dest: "{{ projeto_destino }}/{{ item }}"
+        owner: "{{ ansible_user }}"
+        group: "{{ ansible_user }}"
+        mode: "0644"
+      loop: "{{ arquivos_projeto }}"
+
+    - name: Copiar diretórios de configuração
+      ansible.builtin.copy:
+        src: "{{ playbook_dir }}/../{{ item }}"
+        dest: "{{ projeto_destino }}/"
+        owner: "{{ ansible_user }}"
+        group: "{{ ansible_user }}"
+      loop: "{{ diretorios_projeto }}"
+
+    # ============================================================
+    # REDE DOCKER
+    # ============================================================
+
+    - name: Verificar se a rede Docker já existe
+      ansible.builtin.command:
+        cmd: "docker network inspect {{ docker_network }}"
+      register: docker_network_check
+      changed_when: false
+      failed_when: false
+
+    - name: Criar rede Docker bridge
+      ansible.builtin.command:
+        cmd: "docker network create --driver bridge {{ docker_network }}"
+      when: docker_network_check.rc != 0
+
+    # ============================================================
+    # DOCKER COMPOSE
+    # ============================================================
+
+    - name: Construir e iniciar containers com Docker Compose
+      community.docker.docker_compose_v2:
+        project_src: "{{ projeto_destino }}"
+        state: present
+        build: always
+        remove_orphans: true
+
+    # ============================================================
+    # VALIDAÇÃO
+    # ============================================================
+
+    - name: Aguardar serviço Projeto Korp ficar disponível
+      ansible.builtin.uri:
+        url: http://localhost/projeto-korp
+        method: GET
+        status_code: 200
+        return_content: true
+      register: resposta_korp
+      retries: 20
+      delay: 3
+      until: resposta_korp.status == 200
+
+    - name: Exibir resposta do serviço no console
+      ansible.builtin.debug:
+        msg: "{{ resposta_korp.content }}"
+
+    - name: Validar endpoint de health
+      ansible.builtin.uri:
+        url: http://localhost/health
+        method: GET
+        status_code: 200
+        return_content: true
+      register: resposta_health
+
+    - name: Exibir health do serviço
+      ansible.builtin.debug:
+        msg: "{{ resposta_health.content }}"
+
+    - name: Mostrar containers em execução
+      ansible.builtin.command:
+        cmd: docker compose ps
+        chdir: "{{ projeto_destino }}"
+      register: compose_ps
+      changed_when: false
+
+    - name: Exibir containers
+      ansible.builtin.debug:
+        msg: "{{ compose_ps.stdout_lines }}"
