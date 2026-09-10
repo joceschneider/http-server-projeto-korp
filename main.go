@@ -23,12 +23,12 @@ var requestsTotal = prometheus.NewCounter(
 )
 
 func projetoKorpHandler(w http.ResponseWriter, r *http.Request) {
-	requestsTotal.Inc()
-
 	if r.Method != http.MethodGet {
 		http.Error(w, "Metodo nao permitido", http.StatusMethodNotAllowed)
 		return
 	}
+
+	requestsTotal.Inc()
 
 	response := Response{
 		Nome:    "Projeto Korp",

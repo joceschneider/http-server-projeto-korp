@@ -6,11 +6,13 @@ services:
       dockerfile: Dockerfile
     expose:
       - "8080"
+    restart: unless-stopped
     networks:
       - projeto-korp-network
 
   nginx:
-    image: nginx:latest
+    image: nginx:1.29.8-alpine
+    restart: unless-stopped
     ports:
       - "80:80"
     volumes:
@@ -21,7 +23,8 @@ services:
       - projeto-korp-network
 
   prometheus:
-    image: prom/prometheus:latest
+    image: prom/prometheus:v3.7.3
+    restart: unless-stopped
     ports:
       - "9090:9090"
     volumes:
@@ -32,7 +35,8 @@ services:
       - projeto-korp-network
 
   grafana:
-    image: grafana/grafana:latest
+    image: grafana/grafana:12.3.1
+    restart: unless-stopped
     ports:
       - "3000:3000"
     volumes:

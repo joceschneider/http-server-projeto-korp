@@ -75,6 +75,14 @@ projeto-korp-network
 - Ubuntu Linux
 - SSH
 
+### Versões fixadas no Docker Compose
+
+- NGINX: `1.29.8-alpine`
+- Prometheus: `v3.7.3`
+- Grafana: `12.3.1`
+
+As imagens são versionadas explicitamente no Compose para tornar a execução mais previsível e evitar mudanças inesperadas associadas a tags mutáveis como `latest`.
+
 ---
 
 ## Estrutura do projeto
@@ -82,7 +90,8 @@ projeto-korp-network
 ```text
 http-server-projeto-korp/
 ├── ansible/
-│   ├── inventory.ini
+│   ├── inventory.example.ini
+│   ├── requirements.yml
 │   └── playbook.yml
 ├── grafana/
 │   ├── dashboards/
@@ -285,6 +294,15 @@ Interface:
 http://localhost:3000
 ```
 
+Primeiro acesso local:
+
+```text
+usuário: admin
+senha: admin
+```
+
+O Grafana solicita a troca da senha no primeiro login.
+
 Dashboard criado:
 
 ```text
@@ -335,7 +353,7 @@ grafana/provisioning/dashboards/dashboards.yml
 grafana/dashboards/http-server-projeto-korp-dashboard.json
 ```
 
-Dessa forma, em um ambiente novo, o Grafana inicia já com o datasource e o dashboard disponíveis.
+Dessa forma, em um ambiente novo, o Grafana inicia já com o datasource e o dashboard disponíveis. O arquivo do dashboard é mantido no modelo JSON **Classic**, compatível com o provisionamento clássico por arquivo utilizado neste projeto.
 
 ## Teste de tráfego
 
@@ -393,6 +411,24 @@ linux_korp ansible_host=<IP_DA_VM> ansible_user=<USUARIO> ansible_ssh_private_ke
 > Ajuste IP, usuário e caminho da chave SSH conforme o ambiente local.
 > Não versionar chaves privadas no repositório.
 
+## Pré-requisitos do control node
+
+Além do Ansible, o playbook utiliza a collection `community.docker`. Instale as dependências declaradas no repositório:
+
+```bash
+ansible-galaxy collection install -r ansible/requirements.yml
+```
+
+## Criar o inventory local
+
+O arquivo real de inventory é específico do ambiente e não é versionado. Crie-o a partir do exemplo:
+
+```bash
+cp ansible/inventory.example.ini ansible/inventory.ini
+```
+
+Depois edite `ansible/inventory.ini` e informe o IP da VM, usuário SSH e caminho da chave privada.
+
 ## Testar comunicação com Ansible
 
 ```bash
@@ -410,8 +446,13 @@ linux_korp | SUCCESS => {
 
 ## Provisionamento completo
 
+Após preparar o control node e o inventory local, todo o **ambiente alvo** é provisionado com um único comando Ansible:
+
 ```bash
-ansible-playbook   -i ansible/inventory.ini   ansible/playbook.yml   --ask-become-pass
+ansible-playbook \
+  -i ansible/inventory.ini \
+  ansible/playbook.yml \
+  --ask-become-pass
 ```
 
 O playbook:
@@ -517,6 +558,8 @@ Grafana:
 http://localhost:3000
 ```
 
+Os serviços usam `restart: unless-stopped`, de modo que voltam automaticamente após reinicialização do Docker/host, exceto quando forem explicitamente parados.
+
 Parar:
 
 ```bash
@@ -562,7 +605,15 @@ Foi utilizada uma combinação de:
 
 ## Grafana provisionado por arquivos
 
-O dashboard e o datasource são tratados como configuração versionável, permitindo reproduzir a mesma visualização em ambientes novos.
+O dashboard e o datasource são tratados como configuração versionável, permitindo reproduzir a mesma visualização em ambientes novos. O dashboard versionado usa o formato JSON Classic para o mecanismo clássico de file provisioning.
+
+## Imagens com versões fixadas
+
+NGINX, Prometheus e Grafana usam tags explícitas no `docker-compose.yml`, evitando alterações inesperadas causadas pela tag `latest`.
+
+## Política de reinício
+
+Os serviços utilizam `restart: unless-stopped` para recuperar automaticamente a aplicação após reinicialização do Docker ou do host.
 
 ## Ansible idempotente
 
@@ -600,7 +651,7 @@ O ambiente foi validado manualmente e também através do playbook Ansible.
 
 - Não versionar chaves SSH privadas.
 - Não armazenar senhas no repositório.
-- Ajustar informações específicas do ambiente local no inventory.
+- Gerar `ansible/inventory.ini` a partir de `ansible/inventory.example.ini` e ajustar as informações específicas do ambiente local.
 - O usuário incluído no grupo `docker` possui privilégios elevados no host Linux.
 
 ---
@@ -610,6 +661,5 @@ O ambiente foi validado manualmente e também através do playbook Ansible.
 - adicionar healthchecks no Docker Compose;
 - adicionar regras de alerta no Prometheus/Grafana;
 - incluir CI/CD para validação do projeto;
-- versionar imagens Docker com tags imutáveis;
 - adicionar testes automatizados da aplicação;
 - utilizar Ansible Vault para segredos, caso necessário.
